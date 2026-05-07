@@ -6,7 +6,13 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
-    #player { width: 100%; height: 100%; }
+    #yt-player { width: 100%; height: 100%; }
+    #drive-player {
+      display: none;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
     #overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -29,39 +35,42 @@
     <h1>McSing</h1>
     <p>Ready to receive...</p>
   </div>
-  <div id="player"></div>
+  <div id="yt-player"></div>
+  <video id="drive-player" autoplay playsinline></video>
 
   <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <script>
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
     const overlay = document.getElementById('overlay');
+    const drivePlayer = document.getElementById('drive-player');
+    const NAMESPACE = 'urn:x-cast:com.brian.mcsing';
 
     let ytPlayer = null;
     let pendingVideoId = null;
 
-    // Load YouTube IFrame API
     const tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
     document.head.appendChild(tag);
 
     window.onYouTubeIframeAPIReady = function () {
-      // If a load request arrived before the API was ready, play it now
       if (pendingVideoId) {
-        createPlayer(pendingVideoId);
+        createYouTubePlayer(pendingVideoId);
         pendingVideoId = null;
       }
     };
 
-    function createPlayer(videoId) {
+    function createYouTubePlayer(videoId) {
       overlay.classList.add('hidden');
+      drivePlayer.style.display = 'none';
+      document.getElementById('yt-player').style.display = 'block';
 
       if (ytPlayer) {
         ytPlayer.loadVideoById(videoId);
         return;
       }
 
-      ytPlayer = new YT.Player('player', {
+      ytPlayer = new YT.Player('yt-player', {
         width: '100%',
         height: '100%',
         videoId: videoId,
@@ -81,25 +90,63 @@
       });
     }
 
-    // Intercept LOAD messages and handle with YouTube IFrame instead
+    function playDriveVideo(contentUrl) {
+      overlay.classList.add('hidden');
+      document.getElementById('yt-player').style.display = 'none';
+      drivePlayer.style.display = 'block';
+
+      drivePlayer.src = contentUrl;
+      drivePlayer.load();
+      drivePlayer.play().catch((e) => {
+        console.error('Drive play() rejected:', e);
+        overlay.classList.remove('hidden');
+      });
+
+      drivePlayer.onerror = () => {
+        console.error('Drive video load error — auth likely rejected');
+        overlay.classList.remove('hidden');
+      };
+    }
+
+    // Custom message handler — receives play/pause commands from the app
+    context.addCustomMessageListener(NAMESPACE, (event) => {
+      const command = event.data?.command;
+      console.log('[McSing] Custom message received:', command);
+
+      if (command === 'pause') {
+        if (ytPlayer) ytPlayer.pauseVideo();
+        if (drivePlayer) drivePlayer.pause();
+      } else if (command === 'play') {
+        if (ytPlayer) ytPlayer.playVideo();
+        if (drivePlayer) drivePlayer.play();
+      }
+    });
+
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
-        const videoId =
-          request.media?.customData?.videoId ||
-          request.media?.contentId;
+        const customData = request.media?.customData;
+        const type = customData?.type;
 
-        if (videoId) {
-          if (window.YT && window.YT.Player) {
-            createPlayer(videoId);
-          } else {
-            // API not ready yet — queue it
-            pendingVideoId = videoId;
+        if (type === 'drive') {
+          const contentUrl = request.media?.contentUrl;
+          if (contentUrl) {
+            playDriveVideo(contentUrl);
           }
-          return null; // Tell CAF we are handling playback ourselves
+          return null;
         }
 
-        return request; // Fall through for any non-YouTube media
+        const videoId = customData?.videoId || request.media?.contentId;
+        if (videoId) {
+          if (window.YT && window.YT.Player) {
+            createYouTubePlayer(videoId);
+          } else {
+            pendingVideoId = videoId;
+          }
+          return null;
+        }
+
+        return request;
       }
     );
 
