@@ -21,13 +21,17 @@
       align-items: center;
       justify-content: center;
       background: #000;
-      color: #39ff14;
+      color: #3fcf7a;
       font-family: sans-serif;
       z-index: 10;
     }
     #overlay h1 { font-size: 3rem; margin-bottom: 1rem; }
     #overlay p { font-size: 1.2rem; color: #aaa; }
     #overlay.hidden { display: none; }
+    #join { display: none; text-align: center; margin: 1.2rem 0 0.4rem; }
+    #join .label { font-size: 2rem; color: #ddd; margin-bottom: 0.4rem; }
+    #join .code { font-size: 9rem; font-weight: 800; letter-spacing: 0.35em; padding-left: 0.35em; color: #3fcf7a; line-height: 1.1; }
+    #join .how { font-size: 1.5rem; color: #aaa; margin-top: 0.6rem; }
     #ver { position: fixed; bottom: 12px; right: 16px; font-size: 0.9rem; color: #555; }
     #status { max-width: 80vw; text-align: center; }
   </style>
@@ -35,8 +39,9 @@
 <body>
   <div id="overlay">
     <h1>McSing</h1>
+    <div id="join"><p class="label">Join the night</p><p class="code" id="join-code"></p><p class="how">Open McSing, choose Join a night, and enter this code.</p></div>
     <p id="status">Ready to receive...</p>
-    <p id="ver">receiver v6 (plex)</p>
+    <p id="ver">receiver v7 (plex)</p>
   </div>
   <div id="yt-player"></div>
   <video id="drive-player" autoplay playsinline></video>
@@ -54,8 +59,13 @@
     let pendingSongId = null;
 
     // Show what the receiver is doing on the TV (until the picture starts), so a failure is visible and not just black.
-    function status(text) {
+    // `idle` is true on the waiting screens, which also show the join code (once the app has told us what it is).
+    let joinCode = '';
+    let playing = false; // a song has been loaded and not stopped since
+    function status(text, idle) {
       document.getElementById('status').textContent = text;
+      document.getElementById('join-code').textContent = joinCode;
+      document.getElementById('join').style.display = idle && joinCode ? 'block' : 'none';
       overlay.classList.remove('hidden');
     }
 
@@ -161,7 +171,12 @@
       } else if (command === 'play') {
         if (ytPlayer) ytPlayer.playVideo();
         if (drivePlayer) drivePlayer.play();
+      } else if (command === 'idle') {
+        // Nothing is playing yet: the app sends the join code so guests can read it off the TV before the first song.
+        if (typeof event.data.code === 'string') joinCode = event.data.code.slice(0, 8);
+        if (!playing) status(joinCode ? 'Waiting for the first song...' : 'Ready to receive...', true);
       } else if (command === 'stop') {
+        if (typeof event.data.code === 'string') joinCode = event.data.code.slice(0, 8);
         // The queue ran out (or the last song was skipped): stop whatever is playing and wait for the next song.
         loadToken++; // anything the stopped song reports afterwards is ignored
         try { if (ytPlayer) ytPlayer.stopVideo(); } catch (e) { /* not ready */ }
@@ -173,7 +188,7 @@
         } catch (e) { /* nothing loaded */ }
         document.getElementById('yt-player').style.display = 'none';
         drivePlayer.style.display = 'none';
-        status('McSing: waiting for the next song...');
+        playing = false; status('McSing: waiting for the next song...', true);
       }
     });
 
@@ -182,6 +197,7 @@
       (request) => {
         const customData = request.media?.customData;
         const type = customData?.type;
+        playing = true;
         status('Got a song to play (' + (type || 'youtube') + ')...');
 
         if (type === 'plex' || type === 'drive') {
