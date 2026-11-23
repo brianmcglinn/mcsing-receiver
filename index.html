@@ -28,12 +28,15 @@
     #overlay h1 { font-size: 3rem; margin-bottom: 1rem; }
     #overlay p { font-size: 1.2rem; color: #aaa; }
     #overlay.hidden { display: none; }
+    #ver { position: fixed; bottom: 12px; right: 16px; font-size: 0.9rem; color: #555; }
+    #status { max-width: 80vw; text-align: center; }
   </style>
 </head>
 <body>
   <div id="overlay">
     <h1>McSing</h1>
-    <p>Ready to receive...</p>
+    <p id="status">Ready to receive...</p>
+    <p id="ver">receiver v2 (plex)</p>
   </div>
   <div id="yt-player"></div>
   <video id="drive-player" autoplay playsinline></video>
@@ -48,6 +51,12 @@
 
     let ytPlayer = null;
     let pendingVideoId = null;
+
+    // Show what the receiver is doing on the TV (until the picture starts), so a failure is visible and not just black.
+    function status(text) {
+      document.getElementById('status').textContent = text;
+      overlay.classList.remove('hidden');
+    }
 
     // Tell the app (every connected sender) that the song ended or could not play, so its queue moves on.
     function tell(event) {
@@ -101,24 +110,28 @@
 
     // A Plex song (a signed link to the video) or, for older apps, a Drive file: one <video> for both.
     function playDriveVideo(contentUrl) {
-      overlay.classList.add('hidden');
+      let host = '';
+      try { host = new URL(contentUrl).host; } catch (e) { host = 'bad address'; }
+      status('Loading song from ' + host + '...');
       document.getElementById('yt-player').style.display = 'none';
       drivePlayer.style.display = 'block';
+
+      drivePlayer.onplaying = () => overlay.classList.add('hidden');
+      drivePlayer.onended = () => tell('ended');
+      drivePlayer.onerror = () => {
+        const err = drivePlayer.error;
+        console.error('Video load error', err);
+        status('Could not load the song (video error ' + (err ? err.code : '?') + (err && err.message ? ': ' + err.message : '') + ')');
+        tell('error');
+      };
 
       drivePlayer.src = contentUrl;
       drivePlayer.load();
       drivePlayer.play().catch((e) => {
         console.error('Video play() rejected:', e);
-        overlay.classList.remove('hidden');
+        status('Could not start the song (' + (e && e.name ? e.name : 'play rejected') + ')');
         tell('error');
       });
-
-      drivePlayer.onended = () => tell('ended');
-      drivePlayer.onerror = () => {
-        console.error('Video load error');
-        overlay.classList.remove('hidden');
-        tell('error');
-      };
     }
 
     // Custom message handler — receives play/pause commands from the app
@@ -140,6 +153,7 @@
       (request) => {
         const customData = request.media?.customData;
         const type = customData?.type;
+        status('Got a song to play (' + (type || 'youtube') + ')...');
 
         if (type === 'plex' || type === 'drive') {
           const contentUrl = request.media?.contentUrl;
