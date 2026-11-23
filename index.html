@@ -36,7 +36,7 @@
   <div id="overlay">
     <h1>McSing</h1>
     <p id="status">Ready to receive...</p>
-    <p id="ver">receiver v2 (plex)</p>
+    <p id="ver">receiver v3 (plex)</p>
   </div>
   <div id="yt-player"></div>
   <video id="drive-player" autoplay playsinline></video>
@@ -59,9 +59,15 @@
     }
 
     // Tell the app (every connected sender) that the song ended or could not play, so its queue moves on.
-    function tell(event) {
-      try { context.sendCustomMessage(NAMESPACE, undefined, { event: event }); } catch (e) { console.error('tell failed', e); }
+    // Every message says which song it is about (the id the app sent as contentId), so the app never blames the song
+    // that is playing now for one that was replaced a moment ago.
+    function tell(event, id) {
+      try { context.sendCustomMessage(NAMESPACE, undefined, { event: event, id: id }); } catch (e) { console.error('tell failed', e); }
     }
+
+    // Counts the songs loaded so far: anything a replaced song reports afterwards is ignored.
+    let loadToken = 0;
+    let ytId = null;
 
     const tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
@@ -75,6 +81,9 @@
     };
 
     function createYouTubePlayer(videoId) {
+      loadToken++; // a Plex song that was playing is replaced: nothing it reports from now on counts
+      ytId = videoId;
+      try { drivePlayer.pause(); } catch (e) { /* nothing loaded */ }
       overlay.classList.add('hidden');
       drivePlayer.style.display = 'none';
       document.getElementById('yt-player').style.display = 'block';
@@ -97,19 +106,22 @@
         events: {
           onReady: (e) => e.target.playVideo(),
           onStateChange: (e) => {
-            if (e.data === 0) tell('ended'); // YT.PlayerState.ENDED
+            if (e.data === 0) tell('ended', ytId); // YT.PlayerState.ENDED
           },
           onError: (e) => {
             console.error('YouTube player error:', e.data);
             overlay.classList.remove('hidden');
-            tell('error');
+            tell('error', ytId);
           },
         },
       });
     }
 
     // A Plex song (a signed link to the video) or, for older apps, a Drive file: one <video> for both.
-    function playDriveVideo(contentUrl) {
+    function playDriveVideo(contentUrl, id) {
+      const token = ++loadToken;
+      const current = () => token === loadToken; // false once another song has been loaded
+      if (ytPlayer) { try { ytPlayer.pauseVideo(); } catch (e) { /* not ready */ } }
       let host = '';
       try { host = new URL(contentUrl).host; } catch (e) { host = 'bad address'; }
       status('Loading song from ' + host + '...');
@@ -117,20 +129,23 @@
       drivePlayer.style.display = 'block';
 
       drivePlayer.onplaying = () => overlay.classList.add('hidden');
-      drivePlayer.onended = () => tell('ended');
+      drivePlayer.onended = () => { if (current()) tell('ended', id); };
       drivePlayer.onerror = () => {
+        if (!current()) return;
         const err = drivePlayer.error;
         console.error('Video load error', err);
         status('Could not load the song (video error ' + (err ? err.code : '?') + (err && err.message ? ': ' + err.message : '') + ')');
-        tell('error');
+        tell('error', id);
       };
 
       drivePlayer.src = contentUrl;
       drivePlayer.load();
       drivePlayer.play().catch((e) => {
+        // A song that another one replaced while it was starting ends its play() with AbortError: not a failure.
+        if (!current() || (e && e.name === 'AbortError')) return;
         console.error('Video play() rejected:', e);
         status('Could not start the song (' + (e && e.name ? e.name : 'play rejected') + ')');
-        tell('error');
+        tell('error', id);
       });
     }
 
@@ -158,7 +173,7 @@
         if (type === 'plex' || type === 'drive') {
           const contentUrl = request.media?.contentUrl;
           if (contentUrl) {
-            playDriveVideo(contentUrl);
+            playDriveVideo(contentUrl, request.media?.contentId);
           }
           return null;
         }
