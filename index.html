@@ -49,6 +49,11 @@
     let ytPlayer = null;
     let pendingVideoId = null;
 
+    // Tell the app (every connected sender) that the song ended or could not play, so its queue moves on.
+    function tell(event) {
+      try { context.sendCustomMessage(NAMESPACE, undefined, { event: event }); } catch (e) { console.error('tell failed', e); }
+    }
+
     const tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
     document.head.appendChild(tag);
@@ -82,14 +87,19 @@
         },
         events: {
           onReady: (e) => e.target.playVideo(),
+          onStateChange: (e) => {
+            if (e.data === 0) tell('ended'); // YT.PlayerState.ENDED
+          },
           onError: (e) => {
             console.error('YouTube player error:', e.data);
             overlay.classList.remove('hidden');
+            tell('error');
           },
         },
       });
     }
 
+    // A Plex song (a signed link to the video) or, for older apps, a Drive file: one <video> for both.
     function playDriveVideo(contentUrl) {
       overlay.classList.add('hidden');
       document.getElementById('yt-player').style.display = 'none';
@@ -98,13 +108,16 @@
       drivePlayer.src = contentUrl;
       drivePlayer.load();
       drivePlayer.play().catch((e) => {
-        console.error('Drive play() rejected:', e);
+        console.error('Video play() rejected:', e);
         overlay.classList.remove('hidden');
+        tell('error');
       });
 
+      drivePlayer.onended = () => tell('ended');
       drivePlayer.onerror = () => {
-        console.error('Drive video load error — auth likely rejected');
+        console.error('Video load error');
         overlay.classList.remove('hidden');
+        tell('error');
       };
     }
 
@@ -128,7 +141,7 @@
         const customData = request.media?.customData;
         const type = customData?.type;
 
-        if (type === 'drive') {
+        if (type === 'plex' || type === 'drive') {
           const contentUrl = request.media?.contentUrl;
           if (contentUrl) {
             playDriveVideo(contentUrl);
