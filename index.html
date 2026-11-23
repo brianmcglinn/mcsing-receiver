@@ -36,7 +36,7 @@
   <div id="overlay">
     <h1>McSing</h1>
     <p id="status">Ready to receive...</p>
-    <p id="ver">receiver v3 (plex)</p>
+    <p id="ver">receiver v4 (plex)</p>
   </div>
   <div id="yt-player"></div>
   <video id="drive-player" autoplay playsinline></video>
@@ -51,6 +51,7 @@
 
     let ytPlayer = null;
     let pendingVideoId = null;
+    let pendingSongId = null;
 
     // Show what the receiver is doing on the TV (until the picture starts), so a failure is visible and not just black.
     function status(text) {
@@ -75,14 +76,14 @@
 
     window.onYouTubeIframeAPIReady = function () {
       if (pendingVideoId) {
-        createYouTubePlayer(pendingVideoId);
+        createYouTubePlayer(pendingVideoId, pendingSongId);
         pendingVideoId = null;
       }
     };
 
-    function createYouTubePlayer(videoId) {
+    function createYouTubePlayer(videoId, songId) {
       loadToken++; // a Plex song that was playing is replaced: nothing it reports from now on counts
-      ytId = videoId;
+      ytId = songId || videoId;
       try { drivePlayer.pause(); } catch (e) { /* nothing loaded */ }
       overlay.classList.add('hidden');
       drivePlayer.style.display = 'none';
@@ -173,7 +174,7 @@
         if (type === 'plex' || type === 'drive') {
           const contentUrl = request.media?.contentUrl;
           if (contentUrl) {
-            playDriveVideo(contentUrl, request.media?.contentId);
+            playDriveVideo(contentUrl, customData?.songId || request.media?.contentId); // the app's own id for the song travels in customData, which the Cast system passes through untouched
           }
           return null;
         }
@@ -181,9 +182,10 @@
         const videoId = customData?.videoId || request.media?.contentId;
         if (videoId) {
           if (window.YT && window.YT.Player) {
-            createYouTubePlayer(videoId);
+            createYouTubePlayer(videoId, customData?.songId);
           } else {
             pendingVideoId = videoId;
+            pendingSongId = customData?.songId;
           }
           return null;
         }
