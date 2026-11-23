@@ -36,7 +36,7 @@
   <div id="overlay">
     <h1>McSing</h1>
     <p id="status">Ready to receive...</p>
-    <p id="ver">receiver v5 (plex)</p>
+    <p id="ver">receiver v6 (plex)</p>
   </div>
   <div id="yt-player"></div>
   <video id="drive-player" autoplay playsinline></video>
@@ -161,6 +161,19 @@
       } else if (command === 'play') {
         if (ytPlayer) ytPlayer.playVideo();
         if (drivePlayer) drivePlayer.play();
+      } else if (command === 'stop') {
+        // The queue ran out (or the last song was skipped): stop whatever is playing and wait for the next song.
+        loadToken++; // anything the stopped song reports afterwards is ignored
+        try { if (ytPlayer) ytPlayer.stopVideo(); } catch (e) { /* not ready */ }
+        try {
+          drivePlayer.pause();
+          drivePlayer.onended = drivePlayer.onerror = drivePlayer.onplaying = null;
+          drivePlayer.removeAttribute('src');
+          drivePlayer.load();
+        } catch (e) { /* nothing loaded */ }
+        document.getElementById('yt-player').style.display = 'none';
+        drivePlayer.style.display = 'none';
+        status('McSing: waiting for the next song...');
       }
     });
 
