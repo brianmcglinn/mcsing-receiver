@@ -36,7 +36,7 @@
   <div id="overlay">
     <h1>McSing</h1>
     <p id="status">Ready to receive...</p>
-    <p id="ver">receiver v4 (plex)</p>
+    <p id="ver">receiver v5 (plex)</p>
   </div>
   <div id="yt-player"></div>
   <video id="drive-player" autoplay playsinline></video>
@@ -194,7 +194,13 @@
       }
     );
 
-    context.start();
+    // This page plays the songs itself, so the Cast system sees no media and would close the receiver as idle after a
+    // few minutes (the connection dropped part-way through a night). Keep it open, and declare our message channel
+    // up front as the Cast documentation asks.
+    context.start({
+      disableIdleTimeout: true,
+      customNamespaces: { [NAMESPACE]: cast.framework.system.MessageType.JSON },
+    });
   </script>
 </body>
 </html>
