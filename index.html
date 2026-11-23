@@ -32,7 +32,6 @@
     #join .label { font-size: 2rem; color: #ddd; margin-bottom: 0.4rem; }
     #join .code { font-size: 9rem; font-weight: 800; letter-spacing: 0.35em; padding-left: 0.35em; color: #3fcf7a; line-height: 1.1; }
     #join .how { font-size: 1.5rem; color: #aaa; margin-top: 0.6rem; }
-    #dbg { position: fixed; bottom: 12px; left: 16px; font-size: 0.9rem; color: #777; z-index: 20; font-family: monospace; }
     #ver { position: fixed; bottom: 12px; right: 16px; font-size: 0.9rem; color: #555; }
     #status { max-width: 80vw; text-align: center; }
   </style>
@@ -42,9 +41,8 @@
     <h1>McSing</h1>
     <div id="join"><p class="label">Join the night</p><p class="code" id="join-code"></p><p class="how">Open McSing, choose Join a night, and enter this code.</p></div>
     <p id="status">Ready to receive...</p>
-    <p id="ver">receiver v8 (plex)</p>
+    <p id="ver">receiver v9 (plex)</p>
   </div>
-  <div id="dbg"></div>
   <div id="yt-player"></div>
   <video id="drive-player" autoplay playsinline></video>
 
@@ -165,7 +163,6 @@
     // Custom message handler — receives play/pause commands from the app
     context.addCustomMessageListener(NAMESPACE, (event) => {
       const command = event.data?.command;
-      document.getElementById('dbg').textContent = 'msg: ' + command + ' ' + new Date().toTimeString().slice(0, 8) + (playing ? ' (song loaded)' : '');
       console.log('[McSing] Custom message received:', command);
 
       if (command === 'pause') {
